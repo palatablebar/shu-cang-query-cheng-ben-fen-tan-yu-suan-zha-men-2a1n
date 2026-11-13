@@ -72,6 +72,16 @@ export const exportPage = {
                   { key: 'query_count', label: '查询数', className: 'num' },
                   { key: 'cached_saved_yuan', label: '缓存节省(元)', className: 'num', render: (row) => Number(row.cached_saved_yuan).toFixed(2) },
                   { key: 'mom_ratio', label: '环比', className: 'num', render: (row) => (row.mom_ratio === null ? '—' : `${(row.mom_ratio * 100).toFixed(1)}%`) },
+                  { key: 'effective_budget_yuan', label: '有效预算', className: 'num', render: (row) => `¥${Number(row.effective_budget_yuan ?? row.budget_yuan).toFixed(2)}` },
+                  { key: 'lent_yuan', label: '转出预占', className: 'num', render: (row) => `¥${Number(row.lent_yuan || 0).toFixed(2)}` },
+                  {
+                    key: 'reconciliation',
+                    label: '对账',
+                    render: (row) =>
+                      row.reconciliation?.status
+                        ? `<span class="badge ${row.reconciliation.status === 'over' ? 'high' : 'ok'}">${row.reconciliation.status === 'over' ? '超支' : '已覆盖'}</span>`
+                        : '—',
+                  },
                 ],
               })
             : emptyState({ title: '还没有可导出的账单', hint: '先完成一次成本核算。' })

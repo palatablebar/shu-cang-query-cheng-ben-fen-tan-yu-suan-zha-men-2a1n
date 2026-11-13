@@ -21,7 +21,7 @@ from src.models.charge import Charge
 from src.models.cost_run import CostRun
 from src.models.query_log import QueryLog
 from src.models.team import Team
-from src.services import cost_model
+from src.services import budget_ledger, cost_model, transfer_service
 from src.utils.errors import AppError, forbidden
 from src.utils.timeutil import iso_utc, local_now, utcnow
 
@@ -154,14 +154,34 @@ def summarize(logs: list[QueryLog], prices: dict, remaining_days: int) -> dict:
     }
 
 
-def _write_charges_and_alerts(db: Session, run: CostRun, summary: dict, teams: dict[int, Team]) -> None:
+def _write_charges_and_alerts(db: Session, run: CostRun, summary: dict, teams: dict[int, Team]) -> dict:
+    """写分摊与告警，并把核算时刻的预算口径/调拨固化成快照。
+
+    有效预算 = 配置预算 + 借入 - 转出预占（只计 approved 且未过期的调拨）。
+    快照写进 charges.* 与 charges.transfer_snapshot，之后调整预算或撤回调拨都不会改写本次账单。
+    """
     db.execute(delete(Charge).where(Charge.run_id == run.id))
     db.execute(delete(BudgetAlert).where(BudgetAlert.run_id == run.id))
     remaining = summary["remaining_days"]
+    now = utcnow()
+    transfers = transfer_service.load_transfers(db)
+    reconciled = 0
     for team_id, stats in summary["team_stats"].items():
         team = teams.get(team_id)
         if team is None:
             continue
+        ledger = budget_ledger.team_ledger(team.id, team.budget_yuan, transfers, stats["amount"], now)
+        reconciliation = {
+            "status": budget_ledger.reconciliation_status(stats["amount"], ledger["effective_budget_yuan"]),
+            "used_yuan": ledger["used_yuan"],
+            "effective_budget_yuan": ledger["effective_budget_yuan"],
+            "remaining_yuan": ledger["remaining_yuan"],
+            "borrowed_yuan": ledger["borrowed_yuan"],
+            "lent_yuan": ledger["lent_yuan"],
+            "frozen_at": iso_utc(now),
+        }
+        if reconciliation["status"] == "over":
+            reconciled += 1
         db.add(
             Charge(
                 run_id=run.id,
@@ -171,12 +191,27 @@ def _write_charges_and_alerts(db: Session, run: CostRun, summary: dict, teams: d
                 query_count=stats["query_count"],
                 cached_saved_yuan=stats["cached_saved"],
                 mom_ratio=cost_model.mom_ratio(stats["amount"], team.prev_month_yuan),
+                budget_yuan=ledger["budget_yuan"],
+                effective_budget_yuan=ledger["effective_budget_yuan"],
+                borrowed_yuan=ledger["borrowed_yuan"],
+                lent_yuan=ledger["lent_yuan"],
+                remaining_yuan=ledger["remaining_yuan"],
+                transfer_snapshot=[
+                    item
+                    for item in budget_ledger.transfer_snapshot(transfers, now)
+                    if item["borrower_team_id"] == team_id or item["lender_team_id"] == team_id
+                ],
+                reconciliation=reconciliation,
                 user_split=stats["user_split"],
                 top_query=stats["top"] or {},
             )
         )
         forecast = cost_model.forecast_budget(stats["amount"], stats["last7"], remaining)
-        ratio = round(forecast["forecast_yuan"] / team.budget_yuan, 4) if team.budget_yuan else 0.0
+        ratio = (
+            round(forecast["forecast_yuan"] / ledger["effective_budget_yuan"], 4)
+            if ledger["effective_budget_yuan"] > 0
+            else 0.0
+        )
         if ratio > WATCH_RATIO:
             level = cost_model.alert_level(ratio)
             db.add(
@@ -185,12 +220,15 @@ def _write_charges_and_alerts(db: Session, run: CostRun, summary: dict, teams: d
                     team_id=team_id,
                     forecast_yuan=forecast["forecast_yuan"],
                     ratio=ratio,
+                    budget_yuan=ledger["budget_yuan"],
+                    effective_budget_yuan=ledger["effective_budget_yuan"],
                     level=level,
                     gate_action=cost_model.gate_action(level, stats["anomalies"] > 0),
                     status="pending",
                 )
             )
     db.flush()
+    return {"over_budget_teams": reconciled, "transfers": len(transfers)}
 
 
 def execute_run(db: Session, run: CostRun, *, remaining_days: int | None = None) -> CostRun:
@@ -204,7 +242,7 @@ def execute_run(db: Session, run: CostRun, *, remaining_days: int | None = None)
         "cache_discount": run.cache_discount,
     }
     summary = summarize(logs, prices, remaining)
-    _write_charges_and_alerts(db, run, summary, teams)
+    budget_info = _write_charges_and_alerts(db, run, summary, teams)
 
     alerts = db.scalar(select(func.count()).select_from(BudgetAlert).where(BudgetAlert.run_id == run.id)) or 0
     run.input_count = len(logs)
@@ -222,12 +260,15 @@ def execute_run(db: Session, run: CostRun, *, remaining_days: int | None = None)
     )
     run.metrics["alerts"] = alerts
     run.metrics["teams"] = len(summary["team_stats"])
+    run.metrics["over_budget_teams"] = budget_info["over_budget_teams"]
+    run.metrics["budget_transfers"] = budget_info["transfers"]
     run.status = "success" if logs else "partial"
     run.log_text = (
         f"读取查询日志 {len(logs)} 条（计费 {summary['billed']} / 未计费 {summary['failed']}）；"
         f"总成本 {summary['total_cost']:.2f} 元；异常 {summary['anomaly_count']} 条"
         f"（阈值 {summary['meta']['threshold_gb']:.1f} GB）；"
-        f"写分摊 {len(summary['team_stats'])} 条、告警 {alerts} 条。"
+        f"写分摊 {len(summary['team_stats'])} 条、告警 {alerts} 条、"
+        f"预算超支团队 {budget_info['over_budget_teams']} 个。"
     )
     run.finished_at = utcnow()
     db.flush()

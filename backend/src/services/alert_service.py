@@ -26,7 +26,10 @@ def serialize(alert: BudgetAlert, team: Team | None) -> dict:
         "team_name": team.name if team else None,
         "cost_center": team.cost_center if team else None,
         "owner": team.owner if team else None,
-        "budget_yuan": round(team.budget_yuan, 2) if team else 0.0,
+        "budget_yuan": round(alert.budget_yuan or (team.budget_yuan if team else 0.0), 2),
+        "effective_budget_yuan": round(
+            alert.effective_budget_yuan or (team.budget_yuan if team else 0.0), 2
+        ),
         "forecast_yuan": round(alert.forecast_yuan, 2),
         "ratio": round(alert.ratio, 4),
         "level": alert.level,

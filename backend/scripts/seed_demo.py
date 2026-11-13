@@ -1,4 +1,4 @@
-"""幂等 seed：3 账号 / 5 团队 / 1,200 条查询 / 1 次成本运行 / 5 条分摊 / 3 条预算告警。
+"""幂等 seed：3 账号 / 5 团队 / 1,200 条查询 / 1 条预算借用 / 1 次成本运行 / 5 条分摊 / 3 条预算告警。
 
 自然键 upsert：
   users.email
@@ -7,6 +7,7 @@
   cost_runs.seed_key
   charges(run_id, team_id)
   budget_alerts(run_id, team_id)
+  budget_transfers.seed_key
   audit_logs.seed_key
 
 重复执行不新增、不覆盖用户改过的预算与告警处置；SEED_SUMMARY 逐字一致。
@@ -19,12 +20,13 @@ from src.config.database import session_scope
 from src.constants.cost_model import CACHE_DISCOUNT, COMPUTE_PRICE_PER_GB_SECOND, SCAN_PRICE_PER_GB
 from src.models.audit import AuditLog
 from src.models.budget_alert import BudgetAlert
+from src.models.budget_transfer import BudgetTransfer
 from src.models.charge import Charge
 from src.models.cost_run import CostRun
 from src.models.query_log import QueryLog
 from src.models.team import Team
 from src.models.user import User
-from src.services import auth_service, cost_model, cost_run_service, team_service
+from src.services import auth_service, cost_model, cost_run_service, team_service, transfer_service
 from src.utils.timeutil import local_now, utcnow
 
 from scripts import demo_config
@@ -36,6 +38,7 @@ from scripts.demo_config import (
 )
 
 SEED_RUN_KEY = "seed-run-2026-11"
+SEED_TRANSFER_KEY = "seed-transfer-2026-11-a"
 DEFAULT_PRICES = {
     "scan_price": SCAN_PRICE_PER_GB,
     "compute_price": COMPUTE_PRICE_PER_GB_SECOND,
@@ -107,6 +110,35 @@ def ensure_query_logs(db, teams: dict[str, Team]) -> int:
     return db.scalar(select(func.count()).select_from(QueryLog)) or 0
 
 
+def ensure_demo_transfers(db, teams: dict[str, Team]) -> None:
+    """一条已通过的跨团队借用：team-a 把 1,500 元借给 team-b，供工作台展示预占/有效预算。"""
+    existing = db.scalar(select(BudgetTransfer).where(BudgetTransfer.seed_key == SEED_TRANSFER_KEY))
+    if existing is not None:
+        return
+    lender = teams.get("team-a")
+    borrower = teams.get("team-b")
+    if lender is None or borrower is None:
+        return
+    transfer = transfer_service.create_transfer(
+        db,
+        {
+            "borrower_team_id": borrower.id,
+            "lender_team_id": lender.id,
+            "amount_yuan": 1500.0,
+            "project": "双十一增长看板临时加算",
+            "reason": "增长分析组 11 月大促期间临时扩容，向计算平台组借用额度，月底归还。",
+            "valid_days": 30,
+        },
+        {"email": "analyst@costcharge.io", "role": "analyst", "team_id": borrower.id},
+        seed_key=SEED_TRANSFER_KEY,
+    )
+    transfer.status = "approved"
+    transfer.decided_by = "admin@costcharge.io"
+    transfer.decided_at = utcnow()
+    transfer.decision_note = "预算充足，按剩余额度放行"
+    db.flush()
+
+
 def ensure_run(db, teams: dict[str, Team]) -> CostRun:
     run = db.scalar(select(CostRun).where(CostRun.seed_key == SEED_RUN_KEY))
     if run is not None:
@@ -115,12 +147,22 @@ def ensure_run(db, teams: dict[str, Team]) -> CostRun:
     remaining = cost_model.remaining_days_of_month(local_now().date())
     logs = list(db.scalars(select(QueryLog).order_by(QueryLog.id)).all())
     preview = cost_run_service.summarize(logs, DEFAULT_PRICES, remaining)
+    # 预算按「有效预算」标定：先算借入/转出净额，再反推配置预算，
+    # 保证演示数据的分档（B 112% high / D 104% / E 101%）与 README 一致。
+    transfers = transfer_service.load_transfers(db)
+    net = {}
+    for transfer in transfers:
+        if transfer.status != "approved":
+            continue
+        net[transfer.borrower_team_id] = net.get(transfer.borrower_team_id, 0.0) + transfer.amount_yuan
+        net[transfer.lender_team_id] = net.get(transfer.lender_team_id, 0.0) - transfer.amount_yuan
     for code, team in teams.items():
         stats = preview["team_stats"].get(team.id)
         if stats is None or (team.budget_yuan or 0) > 0:
             continue
         forecast = cost_model.forecast_budget(stats["amount"], stats["last7"], remaining)
-        team.budget_yuan = demo_config.calibrate_budget(code, forecast["forecast_yuan"])
+        effective_target = demo_config.calibrate_budget(code, forecast["forecast_yuan"])
+        team.budget_yuan = max(0.0, effective_target - net.get(team.id, 0.0))
     db.flush()
 
     return cost_run_service.create_and_execute(
@@ -136,6 +178,22 @@ def ensure_audit(db) -> None:
     seeds = [
         ("seed-audit-1", "admin@costcharge.io", "admin", "team.update", "team", {"budget_yuan": 21600}),
         ("seed-audit-2", "analyst@costcharge.io", "analyst", "run.create", "cost_run", {"run": SEED_RUN_KEY}),
+        (
+            "seed-audit-3",
+            "analyst@costcharge.io",
+            "analyst",
+            "transfer.create",
+            "budget_transfer",
+            {"transfer": SEED_TRANSFER_KEY, "amount_yuan": 1500},
+        ),
+        (
+            "seed-audit-4",
+            "admin@costcharge.io",
+            "admin",
+            "transfer.approve",
+            "budget_transfer",
+            {"transfer": SEED_TRANSFER_KEY, "status": "approved"},
+        ),
     ]
     for seed_key, email, role, action, entity, detail in seeds:
         exists = db.scalar(select(AuditLog).where(AuditLog.seed_key == seed_key))
@@ -159,6 +217,7 @@ def seed_all() -> dict:
         teams = ensure_teams(db)
         users = ensure_users(db, teams)
         ensure_query_logs(db, teams)
+        ensure_demo_transfers(db, teams)
         ensure_run(db, teams)
         ensure_audit(db)
 

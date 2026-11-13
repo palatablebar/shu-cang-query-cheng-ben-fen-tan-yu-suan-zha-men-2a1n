@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, String, UniqueConstraint
+from sqlalchemy import JSON, DateTime, Float, ForeignKey, Integer, UniqueConstraint
 from sqlalchemy.orm import Mapped, mapped_column
 
 from src.models import Base
@@ -22,6 +22,14 @@ class Charge(Base):
     query_count: Mapped[int] = mapped_column(Integer, default=0)
     cached_saved_yuan: Mapped[float] = mapped_column(Float, default=0.0)
     mom_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    # 核算时冻结的预算口径：后续调预算/调拨不会改写已生成账单
+    budget_yuan: Mapped[float] = mapped_column(Float, default=0.0)
+    effective_budget_yuan: Mapped[float] = mapped_column(Float, default=0.0)
+    borrowed_yuan: Mapped[float] = mapped_column(Float, default=0.0)
+    lent_yuan: Mapped[float] = mapped_column(Float, default=0.0)
+    remaining_yuan: Mapped[float] = mapped_column(Float, default=0.0)
+    transfer_snapshot: Mapped[list] = mapped_column(JSON, default=list)
+    reconciliation: Mapped[dict] = mapped_column(JSON, default=dict)
     user_split: Mapped[list] = mapped_column(JSON, default=list)
     top_query: Mapped[dict] = mapped_column(JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime, default=utcnow)

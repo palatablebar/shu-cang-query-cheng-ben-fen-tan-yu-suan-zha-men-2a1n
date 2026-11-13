@@ -1287,3 +1287,84 @@ pre.code {
     grid-template-columns: 1fr auto;
   }
 }
+
+/* ---------- 预算借用工作台 ---------- */
+.ledger-row {
+  display: grid;
+  gap: 5px;
+  padding-bottom: 12px;
+  border-bottom: 1px dashed var(--rule);
+}
+
+.ledger-row:last-child {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+
+.ledger-row .alloc-meta .lent {
+  color: var(--warn);
+}
+
+.transfer-form {
+  display: grid;
+  gap: 10px;
+}
+
+.transfer-form .tiny {
+  font-size: var(--fs-xs);
+}
+
+.decision-actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.recon-list {
+  display: grid;
+  gap: 8px;
+}
+
+.recon-line {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px 16px;
+  align-items: center;
+  justify-content: space-between;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  background: var(--paper-2);
+  font-size: var(--fs-sm);
+}
+
+.recon-team {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 220px;
+}
+
+.recon-fig {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+  align-items: baseline;
+  font-size: var(--fs-xs);
+  color: var(--ink-soft);
+}
+
+.recon-fig .tiny {
+  font-size: var(--fs-xs);
+  color: var(--ink-faint);
+}
+
+.link-inline {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px dashed var(--accent-soft);
+}
+
+.link-inline:hover {
+  color: var(--accent);
+  border-bottom-style: solid;
+}

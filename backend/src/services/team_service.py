@@ -9,8 +9,10 @@ from src.models.budget_alert import BudgetAlert
 from src.models.charge import Charge
 from src.models.cost_run import CostRun
 from src.models.team import Team
+from src.services import budget_ledger
+from src.services import transfer_service as _transfer_service
 from src.utils.errors import AppError, forbidden, not_found
-from src.utils.timeutil import iso_utc
+from src.utils.timeutil import iso_utc, utcnow
 
 
 def assert_team_scope(principal: dict, team_id: int | None) -> None:
@@ -45,9 +47,12 @@ def serialize(
     team: Team,
     charge: Charge | None = None,
     alert: BudgetAlert | None = None,
+    ledger: dict | None = None,
 ) -> dict:
     used = round(charge.amount_yuan, 2) if charge else 0.0
     forecast = round(alert.forecast_yuan, 2) if alert else None
+    ledger = ledger or budget_ledger.team_ledger(team.id, team.budget_yuan, [], used, utcnow())
+    # used_ratio 保持「已用 / 配置预算」的历史口径；usage_ratio 按有效预算，供工作台使用
     budget_ratio = round(used / team.budget_yuan, 4) if team.budget_yuan else None
     return {
         "id": team.id,
@@ -61,6 +66,12 @@ def serialize(
         "note": team.note,
         "used_yuan": used,
         "used_ratio": budget_ratio,
+        "borrowed_yuan": ledger["borrowed_yuan"],
+        "lent_yuan": ledger["lent_yuan"],
+        "effective_budget_yuan": ledger["effective_budget_yuan"],
+        "remaining_yuan": ledger["remaining_yuan"],
+        "usage_ratio": ledger["usage_ratio"],
+        "over_budget": ledger["over_budget"],
         "forecast_yuan": forecast,
         "forecast_ratio": round(alert.ratio, 4) if alert else None,
         "level": alert.level if alert else AlertLevel.NORMAL.value,
@@ -70,6 +81,11 @@ def serialize(
         "query_count": charge.query_count if charge else 0,
         "created_at": iso_utc(team.created_at),
     }
+
+
+def team_ledger(db: Session, team: Team, used_yuan: float = 0.0) -> dict:
+    transfers = _transfer_service.load_transfers(db, team_ids=[team.id])
+    return budget_ledger.team_ledger(team.id, team.budget_yuan, transfers, used_yuan, utcnow())
 
 
 def list_teams(db: Session, principal: dict, *, limit: int = 50, offset: int = 0) -> dict:
@@ -87,10 +103,30 @@ def list_teams(db: Session, principal: dict, *, limit: int = 50, offset: int = 0
     if run is not None:
         charges = {row.team_id: row for row in db.scalars(select(Charge).where(Charge.run_id == run.id)).all()}
         alerts = {row.team_id: row for row in db.scalars(select(BudgetAlert).where(BudgetAlert.run_id == run.id)).all()}
-    items = [serialize(team, charges.get(team.id), alerts.get(team.id)) for team in teams]
+    transfers = _transfer_service.load_transfers(db, team_ids=[team.id for team in teams]) if teams else []
+    now = utcnow()
+    items = [
+        serialize(
+            team,
+            charges.get(team.id),
+            alerts.get(team.id),
+            budget_ledger.team_ledger(
+                team.id,
+                team.budget_yuan,
+                transfers,
+                charges[team.id].amount_yuan if team.id in charges else 0.0,
+                now,
+            ),
+        )
+        for team in teams
+    ]
     totals = {
         "budget_yuan": round(sum(item["budget_yuan"] for item in items), 2),
+        "borrowed_yuan": round(sum(item["borrowed_yuan"] for item in items), 2),
+        "lent_yuan": round(sum(item["lent_yuan"] for item in items), 2),
+        "effective_budget_yuan": round(sum(item["effective_budget_yuan"] for item in items), 2),
         "used_yuan": round(sum(item["used_yuan"] for item in items), 2),
+        "remaining_yuan": round(sum(item["remaining_yuan"] for item in items), 2),
     }
     totals["used_ratio"] = round(totals["used_yuan"] / totals["budget_yuan"], 4) if totals["budget_yuan"] else None
     return {"items": items, "total": total, "limit": limit, "offset": offset, "totals": totals, "run_id": run.id if run else None}

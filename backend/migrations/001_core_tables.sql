@@ -73,6 +73,13 @@ CREATE TABLE charges (
     query_count       INTEGER NOT NULL DEFAULT 0,
     cached_saved_yuan DOUBLE PRECISION NOT NULL DEFAULT 0,
     mom_ratio         DOUBLE PRECISION,
+    budget_yuan             DOUBLE PRECISION NOT NULL DEFAULT 0,
+    effective_budget_yuan   DOUBLE PRECISION NOT NULL DEFAULT 0,
+    borrowed_yuan           DOUBLE PRECISION NOT NULL DEFAULT 0,
+    lent_yuan               DOUBLE PRECISION NOT NULL DEFAULT 0,
+    remaining_yuan          DOUBLE PRECISION NOT NULL DEFAULT 0,
+    transfer_snapshot       JSON,
+    reconciliation          JSON,
     user_split        JSON,
     top_query         JSON,
     created_at        TIMESTAMP NOT NULL,
@@ -85,6 +92,8 @@ CREATE TABLE budget_alerts (
     team_id        INTEGER NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
     forecast_yuan  DOUBLE PRECISION NOT NULL DEFAULT 0,
     ratio          DOUBLE PRECISION NOT NULL DEFAULT 0,
+    budget_yuan            DOUBLE PRECISION NOT NULL DEFAULT 0,
+    effective_budget_yuan  DOUBLE PRECISION NOT NULL DEFAULT 0,
     level          VARCHAR(16) NOT NULL DEFAULT 'normal',
     gate_action    VARCHAR(24) NOT NULL DEFAULT 'watch',
     status         VARCHAR(16) NOT NULL DEFAULT 'pending',
@@ -108,3 +117,31 @@ CREATE TABLE audit_logs (
     seed_key        VARCHAR(120) UNIQUE,
     created_at      TIMESTAMP    NOT NULL
 );
+
+-- 跨团队预算借用：审批通过（approved）且未过期才形成转出预占
+CREATE TABLE budget_transfers (
+    id               SERIAL PRIMARY KEY,
+    transfer_no      VARCHAR(40)  NOT NULL UNIQUE,
+    borrower_team_id INTEGER      NOT NULL REFERENCES teams(id) ON DELETE CASCADE,
+    lender_team_id   INTEGER      REFERENCES teams(id) ON DELETE CASCADE,
+    amount_yuan      DOUBLE PRECISION NOT NULL DEFAULT 0,
+    project          VARCHAR(120) NOT NULL,
+    reason           TEXT,
+    status           VARCHAR(16)  NOT NULL DEFAULT 'pending',
+    requested_by     VARCHAR(160) NOT NULL,
+    requested_at     TIMESTAMP    NOT NULL,
+    decided_by       VARCHAR(160),
+    decided_at       TIMESTAMP,
+    decision_note    TEXT,
+    expires_at       TIMESTAMP,
+    closed_at        TIMESTAMP,
+    close_reason     VARCHAR(160),
+    seed_key         VARCHAR(120) UNIQUE,
+    created_at       TIMESTAMP    NOT NULL,
+    updated_at       TIMESTAMP    NOT NULL
+);
+
+CREATE INDEX ix_budget_transfers_borrower_team_id ON budget_transfers (borrower_team_id);
+CREATE INDEX ix_budget_transfers_lender_team_id   ON budget_transfers (lender_team_id);
+CREATE INDEX ix_budget_transfers_status           ON budget_transfers (status);
+CREATE INDEX ix_budget_transfers_expires_at       ON budget_transfers (expires_at);

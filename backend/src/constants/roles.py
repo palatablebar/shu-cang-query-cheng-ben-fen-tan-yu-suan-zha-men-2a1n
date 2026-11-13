@@ -27,20 +27,26 @@ PERMISSIONS: dict[str, set[str]] = {
         "querylog:read",
         "run:read", "run:create",
         "charge:read", "alert:read", "alert:review",
+        "transfer:read", "transfer:create", "transfer:approve",
         "export:read", "audit:read", "overview:read",
     },
     Role.ANALYST.value: {
         "team:read", "querylog:read",
         "run:read", "run:create",
         "charge:read", "alert:read", "alert:review",
+        "transfer:read", "transfer:create",
         "overview:read",
     },
     Role.VIEWER.value: {
-        "team:read", "querylog:read", "run:read", "charge:read", "alert:read", "overview:read",
+        "team:read", "querylog:read", "run:read", "charge:read", "alert:read",
+        "transfer:read", "transfer:create",
+        "overview:read",
     },
 }
 
 TEAM_WRITE_ROLES = (Role.ADMIN.value,)
+TRANSFER_CREATE_ROLES = (Role.ADMIN.value, Role.ANALYST.value, Role.VIEWER.value)
+TRANSFER_APPROVE_ROLES = (Role.ADMIN.value,)
 RUN_CREATE_ROLES = (Role.ADMIN.value, Role.ANALYST.value)
 ALERT_REVIEW_ROLES = (Role.ADMIN.value, Role.ANALYST.value)
 EXPORT_ROLES = (Role.ADMIN.value,)

@@ -10,7 +10,8 @@ function openReview(view, ctx, alert) {
     body: `${kv([
       ['分档', `<span class="badge ${levelTone(alert.level)}">${esc(ENUMS.alertLevel[alert.level] || alert.level)}</span>`],
       ['预测金额', `¥${Number(alert.forecast_yuan).toFixed(2)}`],
-      ['团队预算', `¥${Number(alert.budget_yuan).toFixed(2)}`],
+      ['配置预算', `¥${Number(alert.budget_yuan).toFixed(2)}`],
+      ['有效预算（含借入/转出预占）', `¥${Number(alert.effective_budget_yuan ?? alert.budget_yuan).toFixed(2)}`],
       ['预测/预算', pct(alert.ratio)],
       ['闸门建议', `<span class="badge info">${esc(ENUMS.gateAction[alert.gate_action] || alert.gate_action)}</span>`],
       ['处置状态', `<span class="badge ${reviewTone(alert.status)}">${esc(ENUMS.alertStatus[alert.status] || alert.status)}</span>`],

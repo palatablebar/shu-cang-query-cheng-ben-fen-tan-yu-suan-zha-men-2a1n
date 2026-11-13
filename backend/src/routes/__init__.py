@@ -11,12 +11,14 @@ from src.routes.health import router as health_router
 from src.routes.overview import router as overview_router
 from src.routes.query_logs import router as query_logs_router
 from src.routes.teams import router as teams_router
+from src.routes.transfers import router as transfers_router
 
 api_router = APIRouter()
 api_router.include_router(health_router)
 api_router.include_router(auth_router)
 api_router.include_router(overview_router)
 api_router.include_router(teams_router)
+api_router.include_router(transfers_router)
 api_router.include_router(query_logs_router)
 api_router.include_router(cost_runs_router)
 api_router.include_router(charges_router)

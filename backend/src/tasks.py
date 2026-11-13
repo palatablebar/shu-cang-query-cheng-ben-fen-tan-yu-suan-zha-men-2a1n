@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import time
 
-from src.config.celery_app import TASK_DAILY, TASK_HEARTBEAT, celery_app
+from src.config.celery_app import TASK_DAILY, TASK_EXPIRE, TASK_HEARTBEAT, celery_app
 from src.config.settings import settings
 from src.utils.logger import get_logger
 
@@ -24,6 +24,19 @@ def heartbeat() -> str:
     except Exception as exc:  # noqa: BLE001
         logger.warning("heartbeat failed: %s", exc)
         return "error"
+
+
+@celery_app.task(name=TASK_EXPIRE)
+def expire_budget_transfers() -> dict:
+    """把过期的借用申请落成 expired，释放转出预占（幂等）。"""
+    from src.config.database import session_scope
+    from src.services import transfer_service
+
+    with session_scope() as db:
+        count = transfer_service.expire_stale(db)
+    if count:
+        logger.info("expired %s budget transfers", count)
+    return {"expired": count}
 
 
 @celery_app.task(name=TASK_DAILY)

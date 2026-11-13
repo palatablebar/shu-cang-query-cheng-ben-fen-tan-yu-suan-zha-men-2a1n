@@ -23,7 +23,8 @@ def get_team(db: Session, team_id: int, principal: dict) -> dict:
 
         charge = db.scalar(select(Charge).where(Charge.run_id == latest.id, Charge.team_id == team.id))
         alert = db.scalar(select(BudgetAlert).where(BudgetAlert.run_id == latest.id, BudgetAlert.team_id == team.id))
-    return team_service.serialize(team, charge, alert)
+    used = charge.amount_yuan if charge is not None else 0.0
+    return team_service.serialize(team, charge, alert, team_service.team_ledger(db, team, used))
 
 
 def update_team(db: Session, team_id: int, payload: dict, principal: dict, request: Request) -> dict:

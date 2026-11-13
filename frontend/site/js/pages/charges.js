@@ -14,9 +14,19 @@ function openUserSplit(row) {
       ['计费查询', `${row.query_count} 条`],
       ['缓存节省', `¥${Number(row.cached_saved_yuan).toFixed(2)}`],
       ['上月环比', row.mom_ratio === null ? '—' : `${(row.mom_ratio * 100).toFixed(1)}%`],
-      ['团队预算', `¥${Number(row.budget_yuan).toFixed(2)}`],
+      ['配置预算（冻结）', `¥${Number(row.budget_yuan_snapshot ?? row.budget_yuan).toFixed(2)}`],
+      ['借入', `¥${Number(row.borrowed_yuan || 0).toFixed(2)}`],
+      ['转出预占', `¥${Number(row.lent_yuan || 0).toFixed(2)}`],
+      ['有效预算（冻结）', `¥${Number(row.effective_budget_yuan ?? row.budget_yuan).toFixed(2)}`],
+      ['剩余额度（冻结）', `¥${Number(row.remaining_yuan || 0).toFixed(2)}`],
       ['生成时间', fmtTime(row.created_at)],
     ])}
+    <h3 style="margin:16px 0 8px;font-size:0.95rem">调拨快照（核算时冻结）</h3>
+    ${
+      (row.transfer_snapshot || []).length
+        ? `<pre class="code">${esc(JSON.stringify(row.transfer_snapshot, null, 2))}</pre>`
+        : '<p class="muted mono tiny">本次核算没有生效的预算调拨。</p>'
+    }
     <h3 style="margin:16px 0 8px;font-size:0.95rem">团队内用户分摊（前 5）</h3>
     <div class="user-split">
       ${users
@@ -49,7 +59,10 @@ export const chargesPage = {
       view.querySelector('#retry-btn')?.addEventListener('click', () => chargesPage.render(view, ctx));
       return;
     }
-    const totalBudget = data.items.reduce((sum, item) => sum + item.budget_yuan, 0);
+    const totalBudget = data.items.reduce(
+    (sum, item) => sum + Number(item.effective_budget_yuan ?? item.budget_yuan),
+    0,
+  );
     const totalAmount = data.total_amount_yuan || 0;
     view.innerHTML = `
       <section class="panel">
@@ -63,7 +76,7 @@ export const chargesPage = {
         <div class="panel-body">
           <div class="alloc-summary">
             <div class="summary-cell"><span class="eyebrow">TOTAL</span><b class="mono">¥${Number(totalAmount).toFixed(2)}</b></div>
-            <div class="summary-cell"><span class="eyebrow">BUDGET</span><b class="mono">¥${Number(totalBudget).toFixed(2)}</b></div>
+            <div class="summary-cell"><span class="eyebrow">EFFECTIVE BUDGET</span><b class="mono">¥${Number(totalBudget).toFixed(2)}</b></div>
             <div class="summary-cell"><span class="eyebrow">USED</span><b class="mono">${totalBudget ? pct(totalAmount / totalBudget) : '—'}</b></div>
             <div class="summary-cell"><span class="eyebrow">ALERTS</span><b class="mono">${run ? run.alerts.length : 0}</b></div>
           </div>
@@ -78,8 +91,26 @@ export const chargesPage = {
             { key: 'ratio', label: '占比', render: (row) => `${pct(row.ratio)}<div class="mini-meter">${meter(row.ratio, { segments: 18, tone: 'on' })}</div>` },
             { key: 'query_count', label: '查询数', className: 'num' },
             { key: 'cached_saved_yuan', label: '缓存节省', className: 'num', render: (row) => `¥${Number(row.cached_saved_yuan).toFixed(2)}` },
+            {
+              key: 'effective_budget_yuan',
+              label: '有效预算',
+              className: 'num',
+              render: (row) =>
+                `¥${Number(row.effective_budget_yuan ?? row.budget_yuan).toFixed(2)}${
+                  Number(row.lent_yuan || 0) || Number(row.borrowed_yuan || 0)
+                    ? `<div class="mono muted tiny">借入 ${Number(row.borrowed_yuan || 0).toFixed(0)} / 转出 ${Number(row.lent_yuan || 0).toFixed(0)}</div>`
+                    : ''
+                }`,
+            },
+            {
+              key: 'reconciliation',
+              label: '对账',
+              render: (row) =>
+                row.reconciliation?.status
+                  ? `<span class="badge ${row.reconciliation.status === 'over' ? 'high' : 'ok'}">${row.reconciliation.status === 'over' ? '超支' : '已覆盖'}</span>`
+                  : '—',
+            },
             { key: 'mom_ratio', label: '环比', className: 'num', render: (row) => (row.mom_ratio === null ? '—' : `${row.mom_ratio > 0 ? '+' : ''}${(row.mom_ratio * 100).toFixed(1)}%`) },
-            { key: 'used_ratio', label: '预算占用', className: 'num', render: (row) => (row.budget_yuan ? pct(row.amount_yuan / row.budget_yuan) : '—') },
           ],
         })}
       </section>`;

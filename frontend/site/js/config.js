@@ -13,6 +13,7 @@ export const BRAND = {
     ['A', '扫描 0.028 元/GB、计算 0.0004 元/GB·s，缓存命中 0.3 折，失败查询不计费。'],
     ['B', '按团队汇总、按用户下钻；占比与上月环比同屏，客服和财务不用再对 Excel。'],
     ['C', 'P95 + 3×MAD 抓异常大查询，预测 112% 自动给出限额/降采样/物化视图建议。'],
+    ['D', '跨团队预算借用走申请-审批-预占闭环，核算时冻结调拨快照，事后调整不改写账单。'],
   ],
   gl: 'GL-2026',
 };
@@ -22,8 +23,9 @@ export const NAV = [
   { to: '#/query-logs', no: '02', label: '查询日志', permission: 'querylog:read' },
   { to: '#/charges', no: '03', label: '团队分摊', permission: 'charge:read' },
   { to: '#/alerts', no: '04', label: '预算告警', permission: 'alert:read' },
-  { to: '#/export', no: '05', label: '账单导出', permission: 'export:read' },
-  { to: '#/audit', no: '06', label: '审计日志', permission: 'audit:read' },
+  { to: '#/transfers', no: '05', label: '预算借用', permission: 'transfer:read' },
+  { to: '#/export', no: '06', label: '账单导出', permission: 'export:read' },
+  { to: '#/audit', no: '07', label: '审计日志', permission: 'audit:read' },
 ];
 
 export const ROLE_LABELS = {
@@ -43,11 +45,25 @@ export const PERMISSIONS = {
     'charge:read',
     'alert:read',
     'alert:review',
+    'transfer:read',
+    'transfer:create',
+    'transfer:approve',
     'export:read',
     'audit:read',
   ],
-  analyst: ['overview:read', 'team:read', 'querylog:read', 'run:read', 'run:create', 'charge:read', 'alert:read', 'alert:review'],
-  viewer: ['overview:read', 'team:read', 'querylog:read', 'run:read', 'charge:read', 'alert:read'],
+  analyst: [
+    'overview:read',
+    'team:read',
+    'querylog:read',
+    'run:read',
+    'run:create',
+    'charge:read',
+    'alert:read',
+    'alert:review',
+    'transfer:read',
+    'transfer:create',
+  ],
+  viewer: ['overview:read', 'team:read', 'querylog:read', 'run:read', 'charge:read', 'alert:read', 'transfer:read', 'transfer:create'],
 };
 
 export const ENUMS = {
@@ -84,6 +100,21 @@ export const ENUMS = {
     materialized_view: '物化视图',
     watch: '观察',
   },
+  transferStatus: {
+    pending: '待审批',
+    approved: '已通过',
+    rejected: '已驳回',
+    withdrawn: '已撤回',
+    expired: '已过期',
+  },
+  transferDecision: {
+    approve: '通过',
+    reject: '驳回',
+  },
+  reconciliation: {
+    ok: '已覆盖',
+    over: '超支',
+  },
 };
 
 export function can(role, permission) {
@@ -96,6 +127,16 @@ export function levelTone(level) {
 
 export function reviewTone(status) {
   return { pending: 'pending warn', confirmed: 'ok', dismissed: 'danger' }[status] || 'info';
+}
+
+export function transferTone(status) {
+  return {
+    pending: 'warn',
+    approved: 'ok',
+    rejected: 'danger',
+    withdrawn: 'info',
+    expired: 'info',
+  }[status] || 'info';
 }
 
 export function pct(value, digits = 1) {

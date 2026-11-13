@@ -6,17 +6,18 @@ from __future__ import annotations
 
 from datetime import timedelta
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.orm import Session
 
 from src.config.settings import settings
 from src.constants.enums import ALERT_LEVEL_LABELS, AlertStatus, QueryStatus, Role
 from src.models.budget_alert import BudgetAlert
+from src.models.budget_transfer import BudgetTransfer
 from src.models.charge import Charge
 from src.models.cost_run import CostRun
 from src.models.query_log import QueryLog
 from src.models.team import Team
-from src.services import cost_model, team_service
+from src.services import budget_ledger, cost_model, transfer_service
 from src.utils.timeutil import iso_utc, local_now, utcnow
 
 
@@ -65,7 +66,6 @@ def overview(db: Session, principal: dict) -> dict:
     if team_id is not None:
         team_stmt = team_stmt.where(Team.id == team_id)
     teams = db.scalars(team_stmt).all()
-    team_ids = [team.id for team in teams]
 
     charges: list[Charge] = []
     alerts: list[BudgetAlert] = []
@@ -107,13 +107,20 @@ def overview(db: Session, principal: dict) -> dict:
         last7_stmt = last7_stmt.where(QueryLog.team_id == team_id)
     last7_by_team = {row[0]: float(row[1] or 0.0) for row in db.execute(last7_stmt).all()}
 
+    transfers = (
+        transfer_service.load_transfers(db, team_ids=[team.id for team in teams]) if teams else []
+    )
+    now = utcnow()
     allocation = []
     for team in teams:
         charge = charge_by_team.get(team.id)
         alert = alert_by_team.get(team.id)
         amount = round(charge.amount_yuan, 2) if charge else 0.0
+        # 工作台展示的是「当前」台账：配置预算 + 当前生效借入 - 当前转出预占；
+        # 已生成账单里的冻结口径见 /api/transfers/ledger 的 reconciliation。
+        ledger = budget_ledger.team_ledger(team.id, team.budget_yuan, transfers, amount, now)
         forecast = cost_model.forecast_budget(amount, last7_by_team.get(team.id, 0.0), remaining)["forecast_yuan"]
-        forecast_ratio = round(forecast / team.budget_yuan, 4) if team.budget_yuan else None
+        forecast_ratio = round(forecast / ledger["effective_budget_yuan"], 4) if ledger["effective_budget_yuan"] else None
         level = alert.level if alert else cost_model.alert_level(forecast_ratio or 0.0)
         allocation.append(
             {
@@ -124,7 +131,11 @@ def overview(db: Session, principal: dict) -> dict:
                 "ratio": round(charge.ratio, 4) if charge else 0.0,
                 "query_count": charge.query_count if charge else 0,
                 "budget_yuan": round(team.budget_yuan, 2),
-                "used_ratio": round(amount / team.budget_yuan, 4) if team.budget_yuan else None,
+                "borrowed_yuan": ledger["borrowed_yuan"],
+                "lent_yuan": ledger["lent_yuan"],
+                "effective_budget_yuan": ledger["effective_budget_yuan"],
+                "remaining_yuan": ledger["remaining_yuan"],
+                "used_ratio": ledger["usage_ratio"],
                 "forecast_yuan": forecast,
                 "forecast_ratio": forecast_ratio,
                 "level": level,
@@ -132,16 +143,37 @@ def overview(db: Session, principal: dict) -> dict:
             }
         )
 
+    effective_total = round(sum(item["effective_budget_yuan"] for item in allocation), 2)
+    active_transfers = db.scalar(
+        select(func.count())
+        .select_from(BudgetTransfer)
+        .where(
+            BudgetTransfer.status == "approved",
+            or_(BudgetTransfer.expires_at.is_(None), BudgetTransfer.expires_at > now),
+        )
+    ) or 0
+    pending_transfers = db.scalar(
+        select(func.count())
+        .select_from(BudgetTransfer)
+        .where(
+            BudgetTransfer.status == "pending",
+            or_(BudgetTransfer.expires_at.is_(None), BudgetTransfer.expires_at > now),
+        )
+    ) or 0
+
     return {
         "total_cost_yuan": used_total if team_id is not None else round(run.total_cost_yuan, 2) if run else used_total,
         "used_yuan": used_total,
         "budget_total_yuan": budget_total,
-        "budget_used_ratio": round(used_total / budget_total, 4) if budget_total else None,
+        "effective_budget_total_yuan": effective_total,
+        "budget_used_ratio": round(used_total / effective_total, 4) if effective_total else None,
         "anomaly_count": anomaly_count,
         "query_total": query_total,
         "failed_count": failed_count,
         "alert_count": len(alerts),
         "pending_alerts": pending_alerts,
+        "active_transfers": active_transfers,
+        "pending_transfers": pending_transfers,
         "team_count": len(teams),
         "worker_alive": worker_alive(),
         "metrics": {

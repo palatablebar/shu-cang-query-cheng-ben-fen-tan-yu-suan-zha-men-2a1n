@@ -19,6 +19,9 @@ class BudgetAlert(Base):
     team_id: Mapped[int] = mapped_column(ForeignKey("teams.id", ondelete="CASCADE"), index=True)
     forecast_yuan: Mapped[float] = mapped_column(Float, default=0.0)
     ratio: Mapped[float] = mapped_column(Float, default=0.0)
+    # 核算时冻结的预算口径（有效预算已计入借入/转出预占）
+    budget_yuan: Mapped[float] = mapped_column(Float, default=0.0)
+    effective_budget_yuan: Mapped[float] = mapped_column(Float, default=0.0)
     level: Mapped[str] = mapped_column(String(16), default="normal", index=True)
     gate_action: Mapped[str] = mapped_column(String(24), default="watch")
     status: Mapped[str] = mapped_column(String(16), default="pending", index=True)

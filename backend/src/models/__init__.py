@@ -13,5 +13,16 @@ from src.models.query_log import QueryLog  # noqa: E402
 from src.models.cost_run import CostRun  # noqa: E402
 from src.models.charge import Charge  # noqa: E402
 from src.models.budget_alert import BudgetAlert  # noqa: E402
+from src.models.budget_transfer import BudgetTransfer  # noqa: E402
 
-__all__ = ["Base", "User", "AuditLog", "Team", "QueryLog", "CostRun", "Charge", "BudgetAlert"]
+__all__ = [
+    "Base",
+    "User",
+    "AuditLog",
+    "Team",
+    "QueryLog",
+    "CostRun",
+    "Charge",
+    "BudgetAlert",
+    "BudgetTransfer",
+]

@@ -109,3 +109,55 @@ GATE_ACTION_LABELS: dict[str, str] = {
     GateAction.MATERIALIZED_VIEW.value: "物化视图",
     GateAction.WATCH.value: "观察",
 }
+
+
+class TransferStatus(StrEnum):
+    """跨团队预算借用申请的状态机。
+
+    pending --审批通过--> approved --撤回/过期--> withdrawn / expired
+    pending --驳回--> rejected
+    只有 approved 且未过期的申请在台账中形成「转出预占」。
+    """
+
+    PENDING = "pending"
+    APPROVED = "approved"
+    REJECTED = "rejected"
+    WITHDRAWN = "withdrawn"
+    EXPIRED = "expired"
+
+
+TRANSFER_STATUS_LABELS: dict[str, str] = {
+    TransferStatus.PENDING.value: "待审批",
+    TransferStatus.APPROVED.value: "已通过",
+    TransferStatus.REJECTED.value: "已驳回",
+    TransferStatus.WITHDRAWN.value: "已撤回",
+    TransferStatus.EXPIRED.value: "已过期",
+}
+
+TRANSFER_STATUS_ORDER: list[str] = [
+    TransferStatus.PENDING.value,
+    TransferStatus.APPROVED.value,
+    TransferStatus.REJECTED.value,
+    TransferStatus.WITHDRAWN.value,
+    TransferStatus.EXPIRED.value,
+]
+
+ACTIVE_TRANSFER_STATUSES: tuple[str, ...] = (TransferStatus.APPROVED.value,)
+CLOSED_TRANSFER_STATUSES: tuple[str, ...] = (
+    TransferStatus.REJECTED.value,
+    TransferStatus.WITHDRAWN.value,
+    TransferStatus.EXPIRED.value,
+)
+
+
+class TransferDecision(StrEnum):
+    """管理员审批动作。"""
+
+    APPROVE = "approve"
+    REJECT = "reject"
+
+
+TRANSFER_DECISION_LABELS: dict[str, str] = {
+    TransferDecision.APPROVE.value: "通过",
+    TransferDecision.REJECT.value: "驳回",
+}

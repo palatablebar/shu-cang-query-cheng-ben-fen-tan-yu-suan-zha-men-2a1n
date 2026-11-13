@@ -33,14 +33,6 @@ def review_alert(db: Session, alert_id: int, payload: dict, principal: dict, req
     return alert_service.serialize(alert, None)
 
 
-def list_charges(db: Session, principal: dict, **filters) -> dict:
-    return charge_service.list_charges(db, principal, **filters)
-
-
-def list_alerts(db: Session, principal: dict, **filters) -> dict:
-    return alert_service.list_alerts(db, principal, **filters)
-
-
 def charges_csv(db: Session, run_id: int | None, principal: dict, request) -> Response:
     content = export_service.charges_csv(db, run_id)
     audit_service.record(

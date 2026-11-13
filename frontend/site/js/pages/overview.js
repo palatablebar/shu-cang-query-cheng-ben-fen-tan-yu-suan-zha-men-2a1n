@@ -4,7 +4,10 @@ import { costFigure, costTrend, emptyState, errorBox, errorMessage, esc, fmtTime
 
 function allocationRow(item) {
   const used = item.used_ratio || 0;
-  return `<div class="alloc-row">
+  const lent = Number(item.lent_yuan || 0);
+  const borrowed = Number(item.borrowed_yuan || 0);
+  const remaining = Number(item.remaining_yuan ?? item.budget_yuan - item.amount_yuan);
+  return `<div class="alloc-row" data-testid="alloc-${esc(item.code)}">
     <div class="alloc-head">
       <span class="mono">${esc(item.code)}</span>
       <b>${esc(item.name)}</b>
@@ -14,8 +17,10 @@ function allocationRow(item) {
     ${meter(used, { segments: 32, tone: used > 1 ? 'danger' : 'on' })}
     <div class="alloc-meta mono">
       <span>占比 ${pct(item.ratio)}</span>
-      <span>预算 ¥${Number(item.budget_yuan).toFixed(2)}</span>
-      <span>用量 ${pct(used)}</span>
+      <span>有效预算 ¥${Number(item.effective_budget_yuan ?? item.budget_yuan).toFixed(2)}</span>
+      <span class="lent">转出预占 ¥${lent.toFixed(2)}</span>
+      <span>借入 ¥${borrowed.toFixed(2)}</span>
+      <span>剩余 ¥${remaining.toFixed(2)}</span>
       <span>预测 ${item.forecast_ratio === null ? '—' : pct(item.forecast_ratio)}</span>
     </div>
   </div>`;
@@ -48,6 +53,8 @@ export const overviewPage = {
               <span class="badge">阈值 ${Number(metrics.threshold_gb || 0).toFixed(2)} GB</span>
               <span class="badge">P95 ${Number(metrics.p95_gb || 0).toFixed(2)} GB</span>
               <span class="badge">MAD ${Number(metrics.mad_gb || 0).toFixed(2)} GB</span>
+              <span class="badge ${data.pending_transfers ? 'warn' : ''}">借用待审批 ${data.pending_transfers || 0}</span>
+              <span class="badge">生效调拨 ${data.active_transfers || 0}</span>
             </div>
           </div>
           <div class="hero-side">
@@ -68,7 +75,10 @@ export const overviewPage = {
 
         <div class="grid-2">
           <section class="panel">
-            <div class="panel-head"><h2>团队分摊</h2><span class="meta">charge / ${data.allocation.length} teams</span></div>
+            <div class="panel-head">
+              <h2>团队分摊与额度</h2>
+              <span class="meta">charge / ${data.allocation.length} teams · <a href="#/transfers" class="link-inline">借用台账 →</a></span>
+            </div>
             <div class="panel-body alloc-list">
               ${data.allocation.length ? data.allocation.map(allocationRow).join('') : emptyState({ title: '还没有分摊结果', hint: '先跑一次成本核算。' })}
             </div>

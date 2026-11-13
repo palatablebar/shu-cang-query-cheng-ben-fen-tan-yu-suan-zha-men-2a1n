@@ -139,7 +139,20 @@ export function toast(message, tone = '') {
 
 export function errorMessage(err) {
   if (!err) return '未知错误';
-  if (err.code === 'FORBIDDEN') return '当前角色没有这个操作的权限';
+  if (err.code === 'FORBIDDEN') {
+    const reason = err.detail?.reason;
+    if (reason === 'team_scope') return '不能为其他团队申请预算，只能申请本团队额度';
+    if (reason === 'not_requester') return '只有申请人或管理员可以撤回这笔申请';
+    return '当前角色没有这个操作的权限';
+  }
+  if (err.code === 'CONFLICT') {
+    const reason = err.detail?.reason;
+    if (reason === 'insufficient_available') {
+      return `转出团队剩余额度不足：可借 ¥${Number(err.detail.available_yuan || 0).toFixed(2)}`;
+    }
+    if (reason === 'transfer_not_pending') return '这笔申请已经处理过，请刷新列表';
+    if (reason === 'transfer_expired') return '申请已过有效期，请重新提交';
+  }
   return err.message || '请求失败';
 }
 

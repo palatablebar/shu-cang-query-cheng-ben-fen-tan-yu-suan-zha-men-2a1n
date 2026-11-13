@@ -45,6 +45,24 @@ def create_run(db: Session, payload: dict, principal: dict, request) -> dict:
         detail={"status": run.status, "output": run.output_count},
         ip=request.client.host if request.client else None,
     )
+    # 对账快照留痕：把本次核算冻结的调拨与超支团队记进审计，便于事后追溯
+    snapshot_rows = db.scalars(select(Charge).where(Charge.run_id == run.id)).all()
+    frozen = sum(len(row.transfer_snapshot or []) for row in snapshot_rows)
+    if frozen:
+        audit_service.record(
+            db,
+            actor_email=principal["email"],
+            actor_role=principal["role"],
+            action="transfer.reconcile",
+            entity="cost_run",
+            entity_id=run.id,
+            detail={
+                "run_no": run.run_no,
+                "frozen_transfers": frozen,
+                "over_budget_teams": (run.metrics or {}).get("over_budget_teams", 0),
+            },
+            ip=request.client.host if request.client else None,
+        )
     db.commit()
     return cost_run_service.serialize(run)
 
